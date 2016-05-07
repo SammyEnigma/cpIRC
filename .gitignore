@@ -1,0 +1,5 @@
+*Release*
+*Debug*
+main.cpp
+*.db
+*.opendb

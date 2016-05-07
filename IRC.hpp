@@ -26,6 +26,25 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+#ifdef WIN32
+#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#include <WinSock2.h>
+#pragma comment(lib, "Ws2_32.lib")
+#include <Windows.h>
+#else
+#include <stdlib.h>
+#include <unistd.h>
+#include <errno.h>
+#include <string.h>
+#include <netdb.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#define closesocket(s) close(s)
+#define SOCKET_ERROR -1
+#define INVALID_SOCKET -1
+#endif
+
 #define __CPIRC_VERSION__	0.1
 #define __IRC_DEBUG__ 1
 
@@ -88,6 +107,10 @@ private:
 	void split_to_replies(char* data);
 	void insert_irc_command_hook(irc_command_hook* hook, char* cmd_name, int (*function_ptr)(char*, irc_reply_data*, void*));
 	void delete_irc_command_hook(irc_command_hook* cmd_hook);
+	void irc_strcpy_s(char* dest, const unsigned int destLen, char* src);
+	FILE* irc_fdopen(int fd, const char* mode);
+	int irc_send(const char* format, ...);
+
 	int irc_socket;
 	bool connected;
 	bool sentnick;

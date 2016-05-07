@@ -23,22 +23,7 @@
 	IRC:	#magpie @ irc.quakenet.org
 */
 
-#include "IRC.h"
-#ifdef WIN32
-#include <windows.h>
-#else
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
-#include <netdb.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#define closesocket(s) close(s)
-#define SOCKET_ERROR -1
-#define INVALID_SOCKET -1
-#endif
+#include "IRC.hpp"
 
 IRC::IRC()
 {
@@ -63,18 +48,19 @@ void IRC::insert_irc_command_hook(irc_command_hook* hook, char* cmd_name, int (*
 	{
 		if (!hook->next)
 		{
-			hook->next=new irc_command_hook;
-			hook->next->function=0;
-			hook->next->irc_command=0;
-			hook->next->next=0;
+			hook->next = new irc_command_hook;
+			hook->next->function = 0;
+			hook->next->irc_command = 0;
+			hook->next->next = 0;
 		}
 		insert_irc_command_hook(hook->next, cmd_name, function_ptr);
 	}
 	else
 	{
-		hook->function=function_ptr;
-		hook->irc_command=new char[strlen(cmd_name)+1];
-		strcpy(hook->irc_command, cmd_name);
+		hook->function = function_ptr;
+		unsigned int cmd_name_length = strlen(cmd_name) + 1;
+		hook->irc_command = new char[cmd_name_length];
+		irc_strcpy_s(hook->irc_command, cmd_name_length, cmd_name);
 	}
 }
 
@@ -82,10 +68,10 @@ void IRC::hook_irc_command(char* cmd_name, int (*function_ptr)(char*, irc_reply_
 {
 	if (!hooks)
 	{
-		hooks=new irc_command_hook;
-		hooks->function=0;
-		hooks->irc_command=0;
-		hooks->next=0;
+		hooks = new irc_command_hook;
+		hooks->function = 0;
+		hooks->irc_command = 0;
+		hooks->next = 0;
 		insert_irc_command_hook(hooks, cmd_name, function_ptr);
 	}
 	else
@@ -103,6 +89,47 @@ void IRC::delete_irc_command_hook(irc_command_hook* cmd_hook)
 	delete cmd_hook;
 }
 
+void IRC::irc_strcpy_s(char* dest, const unsigned int destLen, char* src)
+{
+#ifdef WIN32
+	strcpy_s(dest, destLen, src);
+#else
+	strcpy(dest, src);
+#endif
+}
+
+FILE* IRC::irc_fdopen(int fd, const char* mode)
+{
+	FILE* result;
+#ifdef WIN32
+	result = (FILE*)-1; // We are using irc_socket and send command and not file descriptors.
+#else
+	result = fdopen(fd, mode);
+#endif
+	return result;
+}
+
+int IRC::irc_send(const char* format, ...)
+{
+	char buffer[512];
+	va_list va;
+	int result;
+
+	va_start(va, format);
+	vsnprintf(buffer, 512, format, va);
+	buffer[511] = '\0';
+	va_end(va);
+
+#ifdef WIN32
+	result = send(irc_socket, buffer, min(strlen(buffer), 512), 0);
+#else
+	fprintf(dataout, "%s", buffer);
+	result = fflush(dataout);
+#endif
+
+	return result;
+}
+
 int IRC::start(char* server, int port, char* nick, char* user, char* name, char* pass)
 {
 	#ifdef WIN32
@@ -115,20 +142,19 @@ int IRC::start(char* server, int port, char* nick, char* user, char* name, char*
 	if (connected)
 		return 1;
 
-	irc_socket=socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (irc_socket==INVALID_SOCKET)
-	{
+	irc_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (irc_socket == INVALID_SOCKET)
 		return 1;
-	}
-	resolv=gethostbyname(server);
+
+	resolv = gethostbyname(server);
 	if (!resolv)
 	{
 		closesocket(irc_socket);
 		return 1;
 	}
 	memcpy(&rem.sin_addr, resolv->h_addr, 4);
-	rem.sin_family=AF_INET;
-	rem.sin_port=htons(port);
+	rem.sin_family = AF_INET;
+	rem.sin_port = htons(port);
 
 	if (connect(irc_socket, (const sockaddr*)&rem, sizeof(rem))==SOCKET_ERROR)
 	{
@@ -139,25 +165,25 @@ int IRC::start(char* server, int port, char* nick, char* user, char* name, char*
 		return 1;
 	}
 
-	dataout=fdopen(irc_socket, "w");
+#ifndef WIN32
+	dataout = irc_fdopen(irc_socket, "w");
 	//datain=fdopen(irc_socket, "r");
-	
 	if (!dataout /*|| !datain*/)
 	{
 		printf("Failed to open streams!\n");
 		closesocket(irc_socket);
 		return 1;
 	}
+#endif
 	
-	connected=true;
-	
-	cur_nick=new char[strlen(nick)+1];
-	strcpy(cur_nick, nick);
+	connected = true;
+	unsigned int nick_length = strlen(nick) + 1;
+	cur_nick=new char[nick_length];
+	irc_strcpy_s(cur_nick, nick_length, nick);
 
-	fprintf(dataout, "PASS %s\r\n", pass);
-	fprintf(dataout, "NICK %s\r\n", nick);
-	fprintf(dataout, "USER %s * 0 :%s\r\n", user, name);
-	fflush(dataout);		
+	irc_send("PASS %s\r\n", pass);
+	irc_send("NICK %s\r\n", nick);
+	irc_send("USER %s * 0 :%s\r\n", user, name);
 
 	return 0;
 }
@@ -166,7 +192,9 @@ void IRC::disconnect()
 {
 	if (connected)
 	{
+#ifndef WIN32
 		fclose(dataout);
+#endif
 		printf("Disconnected from server.\n");
 		connected=false;
 		quit("Leaving");
@@ -181,11 +209,12 @@ int IRC::quit(char* quit_message)
 {
 	if (connected)
 	{
+		int result;
 		if (quit_message)
-			fprintf(dataout, "QUIT %s\r\n", quit_message);
+			result = irc_send("QUIT %s\r\n", quit_message);
 		else
-			fprintf(dataout, "QUIT\r\n");
-		if (fflush(dataout))
+			result = irc_send("QUIT\r\n");
+		if (result)
 			return 1;
 	}
 	return 0;
@@ -269,7 +298,7 @@ void IRC::parse_irc_reply(char* data)
 	char* hostd;
 	char* cmd;
 	char* params;
-	char buffer[514];
+//	char buffer[514];
 	irc_reply_data hostd_tmp;
 	channel_user* cup;
 	char* p;
@@ -316,18 +345,21 @@ void IRC::parse_irc_reply(char* data)
 				{
 					if (!cup->next)
 					{
-						cup->next=new channel_user;
-						cup->next->channel=0;
-						cup->next->flags=0;
-						cup->next->next=0;
-						cup->next->nick=0;
+						cup->next = new channel_user;
+						cup->next->channel = 0;
+						cup->next->flags = 0;
+						cup->next->next = 0;
+						cup->next->nick = 0;
 					}
-					cup=cup->next;
+					cup = cup->next;
 				}
-				cup->channel=new char[strlen(params)+1];
-				strcpy(cup->channel, params);
-				cup->nick=new char[strlen(hostd_tmp.nick)+1];
-				strcpy(cup->nick, hostd_tmp.nick);
+				unsigned int params_length = strlen(params) + 1;
+				cup->channel = new char[params_length];
+				irc_strcpy_s(cup->channel, params_length, params);
+
+				unsigned int hostd_tmp_nick_length = strlen(hostd_tmp.nick) + 1;
+				cup->nick = new char[hostd_tmp_nick_length];
+				irc_strcpy_s(cup->nick, hostd_tmp_nick_length, hostd_tmp.nick);
 			}
 		}
 		else if (!strcmp(cmd, "PART"))
@@ -613,11 +645,15 @@ void IRC::parse_irc_reply(char* data)
 							cup->flags=cup->flags|IRC_USER_VOICE;
 							p++;
 						}
-						cup->nick=new char[strlen(p)+1];
-						strcpy(cup->nick, p);
-						cup->channel=new char[strlen(chan_temp)+1];
-						strcpy(cup->channel, chan_temp);
-						p=tmp;
+						unsigned int p_length = strlen(p) + 1;
+						cup->nick = new char[p_length];
+						irc_strcpy_s(cup->nick, p_length, p);
+
+						unsigned int chan_temp_length = strlen(p) + 1;
+						cup->channel = new char[chan_temp_length];
+						irc_strcpy_s(cup->channel, chan_temp_length, chan_temp);
+
+						p = tmp;
 					}
 					while (cup->nick)
 					{
@@ -641,10 +677,13 @@ void IRC::parse_irc_reply(char* data)
 						cup->flags=cup->flags|IRC_USER_VOICE;
 						p++;
 					}
-					cup->nick=new char[strlen(p)+1];
-					strcpy(cup->nick, p);
-					cup->channel=new char[strlen(chan_temp)+1];
-					strcpy(cup->channel, chan_temp);
+					unsigned int p_length = strlen(p) + 1;
+					cup->nick=new char[p_length];
+					irc_strcpy_s(cup->nick, p_length, p);
+
+					unsigned int chan_temp_length = strlen(chan_temp) + 1;
+					cup->channel=new char[chan_temp_length];
+					irc_strcpy_s(cup->channel, chan_temp_length, chan_temp);
 				}
 			}
 		}
@@ -675,8 +714,9 @@ void IRC::parse_irc_reply(char* data)
 			if (!strcmp(hostd_tmp.nick, cur_nick))
 			{
 				delete [] cur_nick;
-				cur_nick=new char[strlen(params)+1];
-				strcpy(cur_nick, params);
+				unsigned int cur_nick_length = strlen(params) + 1;
+				cur_nick=new char[cur_nick_length];
+				irc_strcpy_s(cur_nick, cur_nick_length, params);
 			}
 		}
 		/* else if (!strcmp(cmd, ""))
@@ -699,11 +739,10 @@ void IRC::parse_irc_reply(char* data)
 		{
 			if (!params)
 				return;
-			fprintf(dataout, "PONG %s\r\n", &params[1]);
+			irc_send("PONG %s\r\n", &params[1]);
 			#ifdef __IRC_DEBUG__
 			printf("Ping received, pong sent.\n");
 			#endif
-			fflush(dataout);
 		}
 		else
 		{
@@ -742,46 +781,46 @@ int IRC::notice(char* target, char* message)
 {
 	if (!connected)
 		return 1;
-	fprintf(dataout, "NOTICE %s :%s\r\n", target, message);
-	return fflush(dataout);
+	return irc_send("NOTICE %s :%s\r\n", target, message);
 }
 
 int IRC::notice(char* fmt, ...)
 {
 	va_list argp;
-	char* target;
+	char buffer[512];
 	
 	if (!connected)
 		return 1;
+
 	va_start(argp, fmt);
-	fprintf(dataout, "NOTICE %s :", fmt);
-	vfprintf(dataout, va_arg(argp, char*), argp);
+	vsnprintf(buffer, 512, va_arg(argp, char*), argp);
+	buffer[511] = '\0';
 	va_end(argp);
-	fprintf(dataout, "\r\n");
-	return fflush(dataout);
+	return irc_send("NOTICE %s :%s\r\n", fmt, buffer);
 }
 
 int IRC::privmsg(char* target, char* message)
 {
 	if (!connected)
 		return 1;
-	fprintf(dataout, "PRIVMSG %s :%s\r\n", target, message);
-	return fflush(dataout);
+
+	return irc_send("PRIVMSG %s :%s\r\n", target, message);
 }
 
 int IRC::privmsg(char* fmt, ...)
 {
 	va_list argp;
-	char* target;
+	char buffer[512];
 	
 	if (!connected)
 		return 1;
+	
 	va_start(argp, fmt);
-	fprintf(dataout, "PRIVMSG %s :", fmt);
-	vfprintf(dataout, va_arg(argp, char*), argp);
+	vsnprintf(buffer, 512, va_arg(argp, char*), argp);
+	buffer[511] = '\0';
 	va_end(argp);
-	fprintf(dataout, "\r\n");
-	return fflush(dataout);
+
+	return irc_send("PRIVMSG %s :%s\r\n", fmt, buffer);
 }
 
 
@@ -789,57 +828,61 @@ int IRC::join(char* channel)
 {
 	if (!connected)
 		return 1;
-	fprintf(dataout, "JOIN %s\r\n", channel);
-	return fflush(dataout);
+
+	return irc_send("JOIN %s\r\n", channel);
 }
 
 int IRC::part(char* channel)
 {
 	if (!connected)
 		return 1;
-	fprintf(dataout, "PART %s\r\n", channel);
-	return fflush(dataout);
+
+	return irc_send("PART %s\r\n", channel);
 }
 
 int IRC::kick(char* channel, char* nick)
 {
 	if (!connected)
 		return 1;
-	fprintf(dataout, "KICK %s %s\r\n", channel, nick);
-	return fflush(dataout);
+
+	return irc_send("KICK %s %s\r\n", channel, nick);
 }
 
 int IRC::raw(char* data)
 {
 	if (!connected)
 		return 1;
-	fprintf(dataout, "%s\r\n", data);
-	return fflush(dataout);
+
+	return irc_send("%s\r\n", data);
 }
 
 int IRC::kick(char* channel, char* nick, char* message)
 {
 	if (!connected)
 		return 1;
-	fprintf(dataout, "KICK %s %s :%s\r\n", channel, nick, message);
-	return fflush(dataout);
+
+	return irc_send("KICK %s %s :%s\r\n", channel, nick, message);
 }
 
 int IRC::mode(char* channel, char* modes, char* targets)
 {
 	if (!connected)
 		return 1;
+
+	int result;
+
 	if (!targets)
-		fprintf(dataout, "MODE %s %s\r\n", channel, modes);
+		result = irc_send("MODE %s %s\r\n", channel, modes);
 	else
-		fprintf(dataout, "MODE %s %s %s\r\n", channel, modes, targets);
-	return fflush(dataout);
+		result = irc_send("MODE %s %s %s\r\n", channel, modes, targets);
+	return result;
 }
 
 int IRC::mode(char* modes)
 {
 	if (!connected)
 		return 1;
+
 	mode(cur_nick, modes, 0);
 	return 0;
 }
@@ -848,8 +891,8 @@ int IRC::nick(char* newnick)
 {
 	if (!connected)
 		return 1;
-	fprintf(dataout, "NICK %s\r\n", newnick);
-	return fflush(dataout);
+
+	return irc_send("NICK %s\r\n", newnick);
 }
 
 char* IRC::current_nick()
