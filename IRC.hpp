@@ -22,7 +22,7 @@
 	email:	iainsheppard@yahoo.co.uk
 	IRC:	#magpie @ irc.quakenet.org
 */
-
+//TODO: save current channel
 #include <stdio.h>
 #include <stdarg.h>
 
@@ -48,9 +48,30 @@
 #define __CPIRC_VERSION__	0.1
 #define __IRC_DEBUG__ 1
 
-#define IRC_USER_VOICE	1
-#define IRC_USER_HALFOP	2
-#define IRC_USER_OP		4
+enum IrcUserFlags
+{
+	IRC_USER_REGULAR = 0,
+	IRC_USER_VOICE = 1,
+	IRC_USER_HALFOP = 2,
+	IRC_USER_OP = 4
+};
+
+enum IrcReturnCodes
+{
+	IRC_SUCCESS = 0,
+	IRC_ALREADY_CONNECTED,
+	IRC_NOT_CONNECTED,
+	IRC_SOCKET_CREATION_FAILED,
+	IRC_RESOLVE_FAILED,
+	IRC_SOCKET_CONNECT_FAILED,
+	IRC_DATASTREAM_OPEN_FAILED,
+	IRC_DATASTREAM_WRITE_FAILED,
+	IRC_DATASTREAM_CLOSE_FAILED,
+	IRC_SEND_FAILED,
+	IRC_RECV_FAILED,
+	IRC_SOCKET_SHUTDOWN_FAILED,
+	IRC_SOCKET_CLOSE_FAILED
+};
 
 struct irc_reply_data
 {
@@ -78,14 +99,14 @@ struct channel_user
 class IRC
 {
 public:
-	IRC();
+	IRC(void (*printFunction)(const char* fmt, ...));
 	~IRC();
 	int start(char* server, int port, char* nick, char* user, char* name, char* pass);
-	void disconnect();
-	int privmsg(char* target, char* message);
-	int privmsg(char* fmt, ...);
-	int notice(char* target, char* message);
-	int notice(char* fmt, ...);
+	int disconnect();
+	int privmsg(char* message);
+	int privmsg(const char* format, ...);
+	int notice(char* channel, char* message);
+	int notice(char* channel, const char* format, ...);
 	int join(char* channel);
 	int part(char* channel);
 	int kick(char* channel, char* nick);
@@ -97,18 +118,16 @@ public:
 	int raw(char* data);
 	void hook_irc_command(char* cmd_name, int (*function_ptr)(char*, irc_reply_data*, void*));
 	int message_loop();
-	int is_op(char* channel, char* nick);
-	int is_voice(char* channel, char* nick);
+	bool is_op(char* channel, char* nick);
+	bool is_voice(char* channel, char* nick);
 	char* current_nick();
+
 private:
 	void call_hook(char* irc_command, char*params, irc_reply_data* hostd);
-	/*void call_the_hook(irc_command_hook* hook, char* irc_command, char*params, irc_host_data* hostd);*/
 	void parse_irc_reply(char* data);
 	void split_to_replies(char* data);
-	void insert_irc_command_hook(irc_command_hook* hook, char* cmd_name, int (*function_ptr)(char*, irc_reply_data*, void*));
-	void delete_irc_command_hook(irc_command_hook* cmd_hook);
+	void clear_irc_command_hook();
 	void irc_strcpy_s(char* dest, const unsigned int destLen, char* src);
-	FILE* irc_fdopen(int fd, const char* mode);
 	int irc_send(const char* format, ...);
 
 	int irc_socket;
@@ -121,4 +140,5 @@ private:
 	FILE* datain;
 	channel_user* chan_users;
 	irc_command_hook* hooks;
+	void(*prnt)(const char* format, ...) = NULL;
 };
