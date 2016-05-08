@@ -48,97 +48,109 @@
 #define __CPIRC_VERSION__	0.1
 #define __IRC_DEBUG__ 1
 
-enum IrcUserFlags
+namespace cpIRC
 {
-	IRC_USER_REGULAR = 0,
-	IRC_USER_VOICE = 1,
-	IRC_USER_HALFOP = 2,
-	IRC_USER_OP = 4
-};
+	enum IrcUserFlags
+	{
+		IRC_USER_REGULAR = 0,
+		IRC_USER_VOICE = 1,
+		IRC_USER_HALFOP = 2,
+		IRC_USER_OP = 4
+	};
 
-enum IrcReturnCodes
-{
-	IRC_SUCCESS = 0,
-	IRC_ALREADY_CONNECTED,
-	IRC_NOT_CONNECTED,
-	IRC_SOCKET_CREATION_FAILED,
-	IRC_RESOLVE_FAILED,
-	IRC_SOCKET_CONNECT_FAILED,
-	IRC_DATASTREAM_OPEN_FAILED,
-	IRC_DATASTREAM_WRITE_FAILED,
-	IRC_DATASTREAM_CLOSE_FAILED,
-	IRC_SEND_FAILED,
-	IRC_RECV_FAILED,
-	IRC_SOCKET_SHUTDOWN_FAILED,
-	IRC_SOCKET_CLOSE_FAILED
-};
+	enum IrcReturnCodes
+	{
+		IRC_SUCCESS = 0,
+		IRC_ALREADY_CONNECTED,
+		IRC_NOT_CONNECTED,
+		IRC_SOCKET_CREATION_FAILED,
+		IRC_RESOLVE_FAILED,
+		IRC_SOCKET_CONNECT_FAILED,
+		IRC_DATASTREAM_OPEN_FAILED,
+		IRC_DATASTREAM_WRITE_FAILED,
+		IRC_DATASTREAM_CLOSE_FAILED,
+		IRC_SEND_FAILED,
+		IRC_RECV_FAILED,
+		IRC_SOCKET_SHUTDOWN_FAILED,
+		IRC_SOCKET_CLOSE_FAILED
+	};
 
-struct irc_reply_data
-{
-	char* nick;
-	char* ident;
-	char* host;
-	char* target;
-};
+	struct irc_reply_data
+	{
+		char* nick;
+		char* ident;
+		char* host;
+		char* target;
+	};
 
-struct irc_command_hook
-{
-	char* irc_command;
-	int (*function)(char*, irc_reply_data*, void*);
-	irc_command_hook* next;
-};
+	class IRC
+	{
+	public:
+		IRC(void(*printFunction)(const char* fmt, ...));
+		~IRC();
+		int connect(char* server, int port/*, char* nick, char* user, char* name, char* pass*/);
+		int disconnect();
+		//
+		int privmsg(char* receiver, char* message);
+		int privmsg(char* receiver, const char* format, ...);
+		int notice(char* nickname, char* text);
+		int notice(char* nickname, const char* format, ...);
+		int join(char* channels);
+		int join(char* channels, char* keys);
+		int part(char* channels);
+		int kick(char* channel, char* user);
+		int kick(char* channel, char* user, char* comment);
+		//
+		int mode(char* modes);
+		int mode(char* channel, char* modes, char* targets);
+		int nick(char* newnick);
+		int quit(char* quit_message);
+		int raw(char* data);
+		void hook_irc_command(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*));
+		int message_loop();
+		bool is_op(char* channel, char* nick);
+		bool is_voice(char* channel, char* nick);
+		char* current_channel();
 
-struct channel_user
-{
-	char* nick;
-	char* channel;
-	char flags;
-	channel_user* next;
-};
+	private:
+		struct irc_command_hook;
+		struct channel_user;
 
-class IRC
-{
-public:
-	IRC(void (*printFunction)(const char* fmt, ...));
-	~IRC();
-	int start(char* server, int port, char* nick, char* user, char* name, char* pass);
-	int disconnect();
-	int privmsg(char* message);
-	int privmsg(const char* format, ...);
-	int notice(char* channel, char* message);
-	int notice(char* channel, const char* format, ...);
-	int join(char* channel);
-	int part(char* channel);
-	int kick(char* channel, char* nick);
-	int kick(char* channel, char* nick, char* message);
-	int mode(char* modes);
-	int mode(char* channel, char* modes, char* targets);
-	int nick(char* newnick);
-	int quit(char* quit_message);
-	int raw(char* data);
-	void hook_irc_command(char* cmd_name, int (*function_ptr)(char*, irc_reply_data*, void*));
-	int message_loop();
-	bool is_op(char* channel, char* nick);
-	bool is_voice(char* channel, char* nick);
-	char* current_nick();
+		void call_hook(char* irc_command, char*params, irc_reply_data* hostd);
+		void parse_irc_reply(char* data);
+		void split_to_replies(char* data);
+		void clear_irc_command_hook();
+		void irc_strcpy_s(char* dest, const unsigned int destLen, char* src);
+		int irc_send(const char* format, ...);
 
-private:
-	void call_hook(char* irc_command, char*params, irc_reply_data* hostd);
-	void parse_irc_reply(char* data);
-	void split_to_replies(char* data);
-	void clear_irc_command_hook();
-	void irc_strcpy_s(char* dest, const unsigned int destLen, char* src);
-	int irc_send(const char* format, ...);
+#ifndef WIN32
+		FILE* dataout;
+		FILE* datain;
+#endif
+		int irc_socket;
+		bool connected;
+		bool on_channel;
+		bool sentnick;
+		bool sentpass;
+		bool sentuser;
+		char* cur_nick;
+		channel_user* chan_users;
+		irc_command_hook* hooks;
+		void(*prnt)(const char* format, ...) = NULL;
+	};
 
-	int irc_socket;
-	bool connected;
-	bool sentnick;
-	bool sentpass;
-	bool sentuser;
-	char* cur_nick;
-	FILE* dataout;
-	FILE* datain;
-	channel_user* chan_users;
-	irc_command_hook* hooks;
-	void(*prnt)(const char* format, ...) = NULL;
-};
+	struct IRC::irc_command_hook
+	{
+		char* irc_command;
+		int(*function)(char*, irc_reply_data*, IRC*);
+		irc_command_hook* next;
+	};
+
+	struct IRC::channel_user
+	{
+		char* nick;
+		char* channel;
+		char flags;
+		channel_user* next;
+	};
+}
