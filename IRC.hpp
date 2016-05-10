@@ -88,29 +88,27 @@ namespace cpIRC
 	public:
 		IRC(void(*printFunction)(const char* fmt, ...));
 		~IRC();
-		int connect(char* server, int port/*, char* nick, char* user, char* name, char* pass*/);
-		int disconnect();
 		//
-		int privmsg(char* receiver, char* message);
-		int privmsg(char* receiver, const char* format, ...);
+		int connect(char* server, short int port);
+		int pass(char* password);
+		int nick(char* nickname);
+		int user(char* username, char* hostname, char* servername, char* realname);
+		int disconnect();
+		int quit();
+		int quit(char* quit_message);
+		int privmsg(char* receiver, char* text);
 		int notice(char* nickname, char* text);
-		int notice(char* nickname, const char* format, ...);
 		int join(char* channels);
 		int join(char* channels, char* keys);
 		int part(char* channels);
 		int kick(char* channel, char* user);
 		int kick(char* channel, char* user, char* comment);
-		//
-		int mode(char* modes);
-		int mode(char* channel, char* modes, char* targets);
-		int nick(char* newnick);
-		int quit(char* quit_message);
-		int raw(char* data);
+		int raw(char* text);
 		void hook_irc_command(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*));
 		int message_loop();
-		bool is_op(char* channel, char* nick);
-		bool is_voice(char* channel, char* nick);
-		char* current_channel();
+		//
+		int mode(char* channel, char* modes, char* targets);
+		//TODO: user ops
 
 	private:
 		struct irc_command_hook;
@@ -129,14 +127,10 @@ namespace cpIRC
 #endif
 		int irc_socket;
 		bool connected;
-		bool on_channel;
-		bool sentnick;
-		bool sentpass;
-		bool sentuser;
-		char* cur_nick;
+		bool auth_completed;
 		channel_user* chan_users;
 		irc_command_hook* hooks;
-		void(*prnt)(const char* format, ...) = NULL;
+		void(*prnt)(const char* format, ...);
 	};
 
 	struct IRC::irc_command_hook

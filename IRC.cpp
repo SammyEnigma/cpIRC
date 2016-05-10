@@ -26,20 +26,14 @@
 #include "IRC.hpp"
 namespace cpIRC
 {
-	//
 	IRC::IRC(void(*printFunction)(const char* fmt, ...))
 	{
 		hooks = 0;
-		chan_users = 0;
 		connected = false;
-		sentnick = false;
-		sentpass = false;
-		sentuser = false;
-		cur_nick = 0;
+		chan_users = 0;
 		prnt = printFunction;
 	}
 
-	//
 	IRC::~IRC()
 	{
 		if (connected)
@@ -48,7 +42,6 @@ namespace cpIRC
 		clear_irc_command_hook();
 	}
 
-	//
 	void IRC::hook_irc_command(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*))
 	{
 		if (!hooks)
@@ -77,7 +70,6 @@ namespace cpIRC
 		irc_strcpy_s(last->next->irc_command, cmd_name_length, cmd_name);
 	}
 
-	//
 	void IRC::clear_irc_command_hook()
 	{
 		while (hooks)
@@ -105,6 +97,9 @@ namespace cpIRC
 	//
 	int IRC::irc_send(const char* format, ...)
 	{
+		if (!connected)
+			return IRC_NOT_CONNECTED;
+
 		char buffer[512];
 		va_list va;
 		int result;
@@ -125,7 +120,7 @@ namespace cpIRC
 	}
 
 	//
-	int IRC::connect(char* server, int port/*,char* nick, char* user, char* name, char* pass*/)
+	int IRC::connect(char* server, short int port)
 	{
 		hostent* resolve;
 		sockaddr_in rem;
@@ -151,7 +146,8 @@ namespace cpIRC
 		if (::connect(irc_socket, reinterpret_cast<const sockaddr*>(&rem), sizeof(rem)) == SOCKET_ERROR)
 		{
 #ifdef WIN32
-			prnt("Failed to connect: %d\n", WSAGetLastError());
+			if(prnt)
+				prnt("Failed to connect: %d\n", WSAGetLastError());
 #endif
 			closesocket(irc_socket);
 			return IRC_SOCKET_CONNECT_FAILED;
@@ -162,29 +158,19 @@ namespace cpIRC
 		//datain=fdopen(irc_socket, "r");
 		if (!dataout /*|| !datain*/)
 		{
-			prnt("Failed to open streams!\n");
+			if(prnt)
+				prnt("Failed to open streams!\n");
 			closesocket(irc_socket);
 			return IRC_DATASTREAM_OPEN_FAILED;
 		}
 #endif
-
 		connected = true;
-		//TODO: move out pass, nick, user functionality. connected->deprecated?!
-		/*unsigned int nick_length = strlen(nick) + 1;
-		cur_nick = new char[nick_length];
-		irc_strcpy_s(cur_nick, nick_length, nick);
-
-		if (irc_send("PASS %s\r\n", pass) != IRC_SUCCESS)
-			return IRC_SEND_FAILED;
-
-		if (irc_send("NICK %s\r\n", nick) != IRC_SUCCESS)
-			return IRC_SEND_FAILED;
-
-		if (irc_send("USER %s * 0 :%s\r\n", user, name) != IRC_SUCCESS)
-			return IRC_SEND_FAILED;
-
-		prnt("[cpIRC]: Connected!\n");*/
 		return IRC_SUCCESS;
+	}
+
+	int IRC::pass(char* password)
+	{
+		return irc_send("PASS %s\r\n", password);
 	}
 
 	//
@@ -195,69 +181,53 @@ namespace cpIRC
 
 #ifndef WIN32
 		if (fclose(dataout))
-		{
 			return IRC_DATASTREAM_CLOSE_FAILED;
-		}
 #endif
 
 		if (quit("Leaving") != IRC_SUCCESS)
-		{
 			return IRC_SEND_FAILED;
-		}
 
 #ifdef WIN32
 		if (shutdown(irc_socket, 2))
 		{
-			//prnt("Winsock shutdown() failed: %d\n", WSAGetLastError());
+			prnt("[cpIRC]: Socket shutdown error. Last WSA error: %d\n", WSAGetLastError());
 			return IRC_SOCKET_SHUTDOWN_FAILED;
 		}
 #endif
 
 		if (closesocket(irc_socket))
-		{
 			return IRC_SOCKET_CLOSE_FAILED;
-		}
 
 		connected = false;
-		prnt("[cpIRC]: Disconnected from server.\n");
 		return IRC_SUCCESS;
 	}
 
-	//
+	int IRC::quit()
+	{
+		return irc_send("QUIT\r\n");
+	}
+
 	int IRC::quit(char* quit_message)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
-		int result;
-		if (quit_message)
-			result = irc_send("QUIT %s\r\n", quit_message);
-		else
-			result = irc_send("QUIT\r\n");
-		if (result != IRC_SUCCESS)
-			return IRC_SEND_FAILED;
-
-		return IRC_SUCCESS;
+		return irc_send("QUIT %s\r\n", quit_message);
 	}
 
-	//
 	int IRC::message_loop()
 	{
-		char buffer[1024];
-		int ret_len;
-
 		if (!connected)
-		{
-			//prnt("Not connected!\n");
 			return IRC_NOT_CONNECTED;
-		}
+
+		char* buffer = new char[1024];
 
 		while (1)
 		{
-			ret_len = recv(irc_socket, buffer, 1023, 0);
+			int ret_len = recv(irc_socket, buffer, 1023, 0);
 			if (ret_len == SOCKET_ERROR || !ret_len)
 			{
-				//TODO: wsagetlasterror
+#ifdef WIN32
+				if (prnt)
+					prnt("[cpIRC]: Recv error: %d", WSAGetLastError());
+#endif
 				return IRC_RECV_FAILED;
 			}
 
@@ -265,6 +235,7 @@ namespace cpIRC
 			split_to_replies(buffer);
 		}
 
+		delete[] buffer;
 		return IRC_SUCCESS;
 	}
 
@@ -280,41 +251,7 @@ namespace cpIRC
 			data = p + 2;
 		}
 	}
-	//TODO check all calls
-	bool IRC::is_op(char* channel, char* nick)
-	{
-		if (!connected)
-			return false;
 
-		channel_user* cup = chan_users;
-
-		while (cup)
-		{
-			if (!strcmp(cup->channel, channel) && !strcmp(cup->nick, nick))
-				return cup->flags & IRC_USER_OP ? true : false;
-			cup = cup->next;
-		}
-
-		return false;
-	}
-
-	bool IRC::is_voice(char* channel, char* nick)
-	{
-		if (!connected)
-			return false;
-
-		channel_user* cup = chan_users;
-
-		while (cup)
-		{
-			if (!strcmp(cup->channel, channel) && !strcmp(cup->nick, nick))
-				return cup->flags & IRC_USER_VOICE ? true : false;
-
-			cup = cup->next;
-		}
-
-		return false;
-	}
 	//-
 	void IRC::parse_irc_reply(char* data)
 	{
@@ -328,7 +265,8 @@ namespace cpIRC
 
 		hostd_tmp.target = 0;
 
-		prnt("%s\n", data);
+		if(prnt)
+			prnt("%s\n", data);
 
 		if (data[0] == ':')
 		{
@@ -763,7 +701,8 @@ namespace cpIRC
 					return;
 				irc_send("PONG %s\r\n", &params[1]);
 #ifdef __IRC_DEBUG__
-				prnt("Ping received, pong sent.\n");
+				if(prnt)
+					prnt("Ping received, pong sent.\n");
 #endif
 			}
 			else
@@ -794,117 +733,49 @@ namespace cpIRC
 			p = p->next;
 		}
 	}
-	//+
+
 	int IRC::notice(char* nickname, char* text)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
 		return irc_send("NOTICE %s :%s\r\n", nickname, text);
 	}
-	//+
-	int IRC::notice(char* nickname, const char* format, ...)
+
+	int IRC::privmsg(char* receiver, char* text)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
-		va_list argp;
-		char text[512];
-
-		va_start(argp, format);
-		vsnprintf(text, 512, format, argp);
-		text[511] = '\0';
-		va_end(argp);
-
-		return notice(nickname, text);
+		return irc_send("PRIVMSG %s :%s\r\n", receiver, text);
 	}
 
-	//+
-	int IRC::privmsg(char* receiver, char* message)
-	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
-		return irc_send("PRIVMSG %s :%s\r\n", receiver, message);
-	}
-
-	//+
-	int IRC::privmsg(char* receiver, const char* format, ...)
-	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
-		va_list argp;
-		char buffer[512];
-
-		va_start(argp, format);
-		vsnprintf(buffer, 512, format, argp);
-		buffer[511] = '\0';
-		va_end(argp);
-
-		return privmsg(receiver, buffer);
-	}
-
-	//+
 	int IRC::join(char* channels)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
 		return irc_send("JOIN %s\r\n", channels);
 	}
-	//+
+
 	int IRC::join(char* channels, char* keys)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
 		return irc_send("JOIN %s %s\r\n", channels, keys);
 	}
 
-	//+
 	int IRC::part(char* channels)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
 		return irc_send("PART %s\r\n", channels);
 	}
 
-	//+
 	int IRC::kick(char* channel, char* user)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
 		return irc_send("KICK %s %s\r\n", channel, user);
 	}
 
-	//+
 	int IRC::kick(char* channel, char* user, char* comment)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
 		return irc_send("KICK %s %s :%s\r\n", channel, user, comment);
 	}
 
-	//
-	int IRC::raw(char* data)
+	int IRC::raw(char* text)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
-		return irc_send("%s\r\n", data);
+		return irc_send("%s\r\n", text);
 	}
 
-	// TODO: remove channel
-	//WHAAT?!
 	int IRC::mode(char* channel, char* modes, char* targets)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
 		int result;
 		if (!targets)
 			result = irc_send("MODE %s %s\r\n", channel, modes);
@@ -912,23 +783,15 @@ namespace cpIRC
 			result = irc_send("MODE %s %s %s\r\n", channel, modes, targets);
 		return result;
 	}
-	// TODO: What?
-	int IRC::mode(char* modes)
-	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
 
-		mode(cur_nick, modes, 0);
-		return 0;
+	int IRC::nick(char* nickname)
+	{
+		return irc_send("NICK %s\r\n", nickname);
 	}
 
-	//TODO: WHAT?!
-	int IRC::nick(char* newnick)
+	int IRC::user(char * username, char * hostname, char * servername, char * realname)
 	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
-		return irc_send("NICK %s\r\n", newnick);
+		return irc_send("USER %s %s %s :%s\r\n", username, hostname, servername, realname);
 	}
 
 	//
