@@ -88,33 +88,81 @@ namespace cpIRC
 	public:
 		IRC(void(*printFunction)(const char* fmt, ...));
 		~IRC();
-		//
-		int connect(char* server, short int port);
+
+		// Connection registration.
+
 		int pass(char* password);
 		int nick(char* nickname);
 		int user(char* username, char* hostname, char* servername, char* realname);
-		int disconnect();
 		int quit();
 		int quit(char* quit_message);
-		int privmsg(char* receiver, char* text);
-		int notice(char* nickname, char* text);
+		int oper(char* user, char* password);		
+
+		// Channel operations.
+
 		int join(char* channels);
 		int join(char* channels, char* keys);
 		int part(char* channels);
+		int mode(char* nickname, char* modes);
+		int mode(char* channel, char* modes, char* limit, char* user, char* banmask);
+		int topic(char* channel);
+		int topic(char* channel, char* topic);
+		int names();
+		int names(char* channels);
+		int list();
+		int list(char* channels);
+		int list(char* channels, char* server);
+		int invite(char* nickname, char* channel);
 		int kick(char* channel, char* user);
 		int kick(char* channel, char* user, char* comment);
+
+		// Sending messages.
+
+		int privmsg(char* receiver, char* text);
+		int notice(char* nickname, char* text);
+
+		// User-based queries.
+
+		int who(char* name, bool operators);
+		int whois(char* nickmasks);
+		int whois(char* server, char* nickmasks);
+		int whowas(char* nickname);
+		int whowas(char* nickname, int count);
+		int whowas(char* nickname, int count, char* server);
+
+		// Miscellaneous messages.
+
+		int kill(char* nickname, char* comment);
+		int pong(char* daemon);
+		int pong(char* daemon1, char* daemon2);
+
+		// Optional.
+
+		int away();
+		int away(char* message);
+		int rehash();
+		int restart();
+		int summon(char* user);
+		int summon(char* user, char* server);
+		int users();
+		int users(char* server);
+		int wallops(char* text);
+		int userhost(char* nicknames);
+		int ison(char* nicknames);
+
+		// This class only.
+
 		int raw(char* text);
-		void hook_irc_command(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*));
+		int connect(char* server, short int port);
+		void set_callback(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*));
 		int message_loop();
-		//
-		int mode(char* channel, char* modes, char* targets);
-		//TODO: user ops
+		int disconnect();
 
 	private:
 		struct irc_command_hook;
 		struct channel_user;
 
-		void call_hook(char* irc_command, char*params, irc_reply_data* hostd);
+		void callback(char* irc_command, char*params, irc_reply_data* hostd);
 		void parse_irc_reply(char* data);
 		void split_to_replies(char* data);
 		void clear_irc_command_hook();
@@ -127,7 +175,6 @@ namespace cpIRC
 #endif
 		int irc_socket;
 		bool connected;
-		bool auth_completed;
 		channel_user* chan_users;
 		irc_command_hook* hooks;
 		void(*prnt)(const char* format, ...);

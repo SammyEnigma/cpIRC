@@ -42,7 +42,7 @@ namespace cpIRC
 		clear_irc_command_hook();
 	}
 
-	void IRC::hook_irc_command(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*))
+	void IRC::set_callback(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*))
 	{
 		if (!hooks)
 		{
@@ -222,12 +222,17 @@ namespace cpIRC
 		while (1)
 		{
 			int ret_len = recv(irc_socket, buffer, 1023, 0);
-			if (ret_len == SOCKET_ERROR || !ret_len)
+
+			if (!ret_len) // Socked has been closed.
+				break;
+
+			if (ret_len == SOCKET_ERROR)
 			{
 #ifdef WIN32
 				if (prnt)
 					prnt("[cpIRC]: Recv error: %d", WSAGetLastError());
 #endif
+				delete[] buffer;
 				return IRC_RECV_FAILED;
 			}
 
@@ -669,7 +674,7 @@ namespace cpIRC
 				prnt("%s: <%s> %s\n", hostd_tmp.target, hostd_tmp.nick, &params[1]);
 #endif
 			}
-			else if (!strcmp(cmd, "NICK"))
+			/*else if (!strcmp(cmd, "NICK"))
 			{
 				if (!strcmp(hostd_tmp.nick, cur_nick))
 				{
@@ -678,7 +683,7 @@ namespace cpIRC
 					cur_nick = new char[cur_nick_length];
 					irc_strcpy_s(cur_nick, cur_nick_length, params);
 				}
-			}
+			}*/
 			/* else if (!strcmp(cmd, ""))
 			{
 				#ifdef __IRC_DEBUG__
@@ -711,12 +716,12 @@ namespace cpIRC
 				hostd_tmp.ident = 0;
 				hostd_tmp.nick = 0;
 				hostd_tmp.target = 0;
-				call_hook(cmd, params, &hostd_tmp);
+				callback(cmd, params, &hostd_tmp);
 			}
 		}
 	}
 	//
-	void IRC::call_hook(char* irc_command, char* params, irc_reply_data* hostd)
+	void IRC::callback(char* irc_command, char* params, irc_reply_data* hostd)
 	{
 		if (!hooks)
 			return;
@@ -737,6 +742,111 @@ namespace cpIRC
 	int IRC::notice(char* nickname, char* text)
 	{
 		return irc_send("NOTICE %s :%s\r\n", nickname, text);
+	}
+
+	int IRC::who(char* name, bool operators)
+	{
+		int result;
+		if (operators)
+			result = irc_send("WHO %s o\r\n", name);
+		else
+			result = irc_send("WHO %s\r\n", name);
+		return result;
+	}
+
+	int IRC::whois(char* nickmasks)
+	{
+		return irc_send("WHOIS %s\r\n", nickmasks);
+	}
+
+	int IRC::whois(char* server, char* nickmasks)
+	{
+		return irc_send("WHOIS %s %s\r\n", server, nickmasks);
+	}
+
+	int IRC::whowas(char* nickname)
+	{
+		return irc_send("WHOWAS %s\r\n", nickname);
+	}
+
+	int IRC::whowas(char* nickname, int count)
+	{
+		return irc_send("WHOWAS %s %d\r\n", nickname, count);
+	}
+
+	int IRC::whowas(char* nickname, int count, char* server)
+	{
+		return irc_send("WHOWAS %s %d %s\r\n", nickname, count, server);
+	}
+
+	int IRC::kill(char* nickname, char* comment)
+	{
+		return irc_send("KILL %s %s", nickname, comment);
+	}
+
+	int IRC::pong(char* daemon)
+	{
+		return irc_send("PONG %s\r\n", daemon);
+	}
+
+	int IRC::pong(char* daemon1, char* daemon2)
+	{
+		return irc_send("PONG %s %s\r\n", daemon1, daemon2);
+	}
+
+	int IRC::away()
+	{
+		return irc_send("AWAY\r\n");
+	}
+
+	int IRC::away(char* message)
+	{
+		return irc_send("AWAY :%s\r\n", message);
+	}
+
+	int IRC::rehash()
+	{
+		return irc_send("REHASH\r\n");
+	}
+
+	int IRC::restart()
+	{
+		return irc_send("RESTART\r\n");
+	}
+	//TODO ALL: sscanf :)
+	int IRC::summon(char* user)
+	{
+		return irc_send("SUMMON %s\r\n", user);
+	}
+
+	int IRC::summon(char* user, char* server)
+	{
+		return irc_send("SUMMON %s %s\r\n", user, server);
+	}
+
+	int IRC::users()
+	{
+		return irc_send("USERS\r\n");
+	}
+
+	int IRC::users(char* server)
+	{
+		return irc_send("USERS %s\r\n", server);
+	}
+
+	int IRC::wallops(char* text)
+	{
+		return irc_send("WALLOPS :%s\r\n", text);
+	}
+
+	int IRC::userhost(char* nicknames)
+	{
+		return irc_send("USERHOST %s\r\n", nicknames);
+	}
+
+	int IRC::ison(char* nicknames)
+	{
+		return irc_send("ISON %s\r\n", nicknames);
 	}
 
 	int IRC::privmsg(char* receiver, char* text)
@@ -774,14 +884,87 @@ namespace cpIRC
 		return irc_send("%s\r\n", text);
 	}
 
-	int IRC::mode(char* channel, char* modes, char* targets)
+	int IRC::oper(char* user, char * password)
+	{
+		return irc_send("OPER %s %s\r\n", user, password);
+	}
+
+	int IRC::topic(char* channel)
+	{
+		return irc_send("TOPIC %s\r\n", channel);
+	}
+
+	int IRC::topic(char* channel, char* topic)
+	{
+		return irc_send("TOPIC %s :%s\r\n", channel, topic);
+	}
+
+	int IRC::names()
+	{
+		return irc_send("NAMES\r\n");
+	}
+
+	int IRC::names(char* channels)
+	{
+		return irc_send("NAMES %s\r\n", channels);
+	}
+
+	int IRC::mode(char* channel, char* modes, char* limit, char* user, char* banmask)
 	{
 		int result;
-		if (!targets)
-			result = irc_send("MODE %s %s\r\n", channel, modes);
+
+		if (limit)
+		{
+			if (user)
+			{
+				if (banmask)
+					result = irc_send("MODE %s %s\r\n", channel, modes, limit, user, banmask);
+				else
+					result = irc_send("MODE %s %s\r\n", channel, modes, limit, user);
+			}
+			else if (banmask)
+				result = irc_send("MODE %s %s %s %s\r\n", channel, modes, limit, banmask);
+			else
+				result = irc_send("MODE %s %s %s\r\n", channel, modes, limit);
+		}
+		else if (user)
+		{
+			if (banmask)
+				result = irc_send("MODE %s %s %s %s\r\n", channel, modes, user, banmask);
+			else
+				result = irc_send("MODE %s %s %s\r\n", channel, modes, user);
+		}
+		else if (banmask)
+			result = irc_send("MODE %s %s %s\r\n", channel, modes, banmask);
 		else
-			result = irc_send("MODE %s %s %s\r\n", channel, modes, targets);
+			result = irc_send("MODE %s %s\r\n", channel, modes);
+
 		return result;
+	}
+
+	int IRC::list()
+	{
+		return irc_send("LIST\r\n");
+	}
+
+	int IRC::list(char* channels)
+	{
+		return irc_send("LIST %s\r\n", channels);
+	}
+
+	int IRC::list(char* channels, char* server)
+	{
+		return irc_send("LIST %s %s\r\n", channels, server);
+	}
+
+	int IRC::invite(char* nickname, char* channel)
+	{
+		return irc_send("INVITE %s %s\r\n", nickname, channel);
+	}
+
+	int IRC::mode(char* nickname, char* modes)
+	{
+		return irc_send("MODE %s %s\r\n", nickname, modes);
 	}
 
 	int IRC::nick(char* nickname)
@@ -792,11 +975,5 @@ namespace cpIRC
 	int IRC::user(char * username, char * hostname, char * servername, char * realname)
 	{
 		return irc_send("USER %s %s %s :%s\r\n", username, hostname, servername, realname);
-	}
-
-	//
-	char* IRC::current_channel()
-	{
-		return cur_nick;
 	}
 }
