@@ -27,22 +27,28 @@
 #include <stdarg.h>
 
 #ifdef WIN32
+
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <WinSock2.h>
 #pragma comment(lib, "Ws2_32.lib")
 #include <Windows.h>
+
 #else
-#include <stdlib.h>
+
 #include <unistd.h>
-#include <errno.h>
 #include <string.h>
 #include <netdb.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
 #define closesocket(s) close(s)
 #define SOCKET_ERROR -1
 #define INVALID_SOCKET -1
+
+#endif
+
+#include "IRC_errors.hpp"
+#include "IRC_responses.hpp"
+
+#ifndef min
+#define min(a, b) (a < b ? a : b)
 #endif
 
 #define __CPIRC_VERSION__	0.1
@@ -91,70 +97,70 @@ namespace cpIRC
 
 		// Connection registration.
 
-		int pass(char* password);
-		int nick(char* nickname);
-		int user(char* username, char* hostname, char* servername, char* realname);
+		int pass(const char* password);
+		int nick(const char* nickname);
+		int user(const char* username, const char* hostname, const char* servername, const char* realname);
 		int quit();
-		int quit(char* quit_message);
-		int oper(char* user, char* password);		
+		int quit(const char* quit_message);
+		int oper(const char* user, const char* password);
 
 		// Channel operations.
 
-		int join(char* channels);
-		int join(char* channels, char* keys);
-		int part(char* channels);
-		int mode(char* nickname, char* modes);
-		int mode(char* channel, char* modes, char* limit, char* user, char* banmask);
-		int topic(char* channel);
-		int topic(char* channel, char* topic);
+		int join(const char* channels);
+		int join(const char* channels, const char* keys);
+		int part(const char* channels);
+		int mode(const char* nickname, const char* modes);
+		int mode(const char* channel, const char* modes, const char* limit, const char* user, const char* banmask);
+		int topic(const char* channel);
+		int topic(const char* channel, const char* topic);
 		int names();
-		int names(char* channels);
+		int names(const char* channels);
 		int list();
-		int list(char* channels);
-		int list(char* channels, char* server);
-		int invite(char* nickname, char* channel);
-		int kick(char* channel, char* user);
-		int kick(char* channel, char* user, char* comment);
+		int list(const char* channels);
+		int list(const char* channels, const char* server);
+		int invite(const char* nickname, const char* channel);
+		int kick(const char* channel, const char* user);
+		int kick(const char* channel, const char* user, const char* comment);
 
 		// Sending messages.
 
-		int privmsg(char* receiver, char* text);
-		int notice(char* nickname, char* text);
+		int privmsg(const char* receiver, const char* text);
+		int notice(const char* nickname, const char* text);
 
 		// User-based queries.
 
-		int who(char* name, bool operators);
-		int whois(char* nickmasks);
-		int whois(char* server, char* nickmasks);
-		int whowas(char* nickname);
-		int whowas(char* nickname, int count);
-		int whowas(char* nickname, int count, char* server);
+		int who(const char* name, bool operators);
+		int whois(const char* nickmasks);
+		int whois(const char* server, const char* nickmasks);
+		int whowas(const char* nickname);
+		int whowas(const char* nickname, const int count);
+		int whowas(const char* nickname, const int count, const char* server);
 
 		// Miscellaneous messages.
 
-		int kill(char* nickname, char* comment);
-		int pong(char* daemon);
-		int pong(char* daemon1, char* daemon2);
+		int kill(const char* nickname, const char* comment);
+		int pong(const char* daemon);
+		int pong(const char* daemon1, const char* daemon2);
 
 		// Optional.
 
 		int away();
-		int away(char* message);
+		int away(const char* message);
 		int rehash();
 		int restart();
-		int summon(char* user);
-		int summon(char* user, char* server);
+		int summon(const char* user);
+		int summon(const char* user, const char* server);
 		int users();
-		int users(char* server);
-		int wallops(char* text);
-		int userhost(char* nicknames);
-		int ison(char* nicknames);
+		int users(const char* server);
+		int wallops(const char* text);
+		int userhost(const char* nicknames);
+		int ison(const char* nicknames);
 
 		// This class only.
 
-		int raw(char* text);
-		int connect(char* server, short int port);
-		void set_callback(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*));
+		int raw(const char* text);
+		int connect(const char* server, const short int port);
+		void set_callback(const char* cmd_name, int(*function_ptr)(const char*, irc_reply_data*, IRC*));
 		int message_loop();
 		int disconnect();
 
@@ -162,17 +168,13 @@ namespace cpIRC
 		struct irc_command_hook;
 		struct channel_user;
 
-		void callback(char* irc_command, char*params, irc_reply_data* hostd);
+		void callback(const char* irc_command, const char* params, irc_reply_data* hostd);
 		void parse_irc_reply(char* data);
 		void split_to_replies(char* data);
 		void clear_irc_command_hook();
-		void irc_strcpy_s(char* dest, const unsigned int destLen, char* src);
+		void irc_strcpy(char* dest, const unsigned int destLen, const char* src);
 		int irc_send(const char* format, ...);
 
-#ifndef WIN32
-		FILE* dataout;
-		FILE* datain;
-#endif
 		int irc_socket;
 		bool connected;
 		channel_user* chan_users;
@@ -183,7 +185,7 @@ namespace cpIRC
 	struct IRC::irc_command_hook
 	{
 		char* irc_command;
-		int(*function)(char*, irc_reply_data*, IRC*);
+		int(*function)(const char*, irc_reply_data*, IRC*);
 		irc_command_hook* next;
 	};
 

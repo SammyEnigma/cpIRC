@@ -42,7 +42,7 @@ namespace cpIRC
 		clear_irc_command_hook();
 	}
 
-	void IRC::set_callback(char* cmd_name, int(*function_ptr)(char*, irc_reply_data*, IRC*))
+	void IRC::set_callback(const char* cmd_name, int(*function_ptr)(const char*, irc_reply_data*, IRC*))
 	{
 		if (!hooks)
 		{
@@ -52,7 +52,7 @@ namespace cpIRC
 
 			unsigned int cmd_name_length = strlen(cmd_name) + 1;
 			hooks->irc_command = new char[cmd_name_length];
-			irc_strcpy_s(hooks->irc_command, cmd_name_length, cmd_name);
+			irc_strcpy(hooks->irc_command, cmd_name_length, cmd_name);
 
 			return;
 		}
@@ -67,7 +67,7 @@ namespace cpIRC
 
 		unsigned int cmd_name_length = strlen(cmd_name) + 1;
 		last->next->irc_command = new char[cmd_name_length];
-		irc_strcpy_s(last->next->irc_command, cmd_name_length, cmd_name);
+		irc_strcpy(last->next->irc_command, cmd_name_length, cmd_name);
 	}
 
 	void IRC::clear_irc_command_hook()
@@ -85,16 +85,16 @@ namespace cpIRC
 	}
 
 	//
-	void IRC::irc_strcpy_s(char* dest, const unsigned int destLen, char* src)
+	void IRC::irc_strcpy(char* dest, const unsigned int destLen, const char* src)
 	{
 #ifdef WIN32
-		strcpy_s(dest, destLen, src);
+		memcpy_s(dest, src, min(strlen(src), destLen));
 #else
-		strcpy(dest, src);
+		memcpy(dest, src, min(strlen(src), destLen));
 #endif
+
 	}
 
-	//
 	int IRC::irc_send(const char* format, ...)
 	{
 		if (!connected)
@@ -109,18 +109,11 @@ namespace cpIRC
 		buffer[511] = '\0';
 		va_end(va);
 
-#ifdef WIN32
 		result = send(irc_socket, buffer, min(strlen(buffer), 512), 0) ? IRC_SUCCESS : IRC_SEND_FAILED;
-#else
-		fprintf(dataout, "%s", buffer);
-		result = !fflush(dataout) ? IRC_SUCCESS : IRC_DATASTREAM_WRITE_FAILED;
-#endif
-
 		return result;
 	}
 
-	//
-	int IRC::connect(char* server, short int port)
+	int IRC::connect(const char* server, const short int port)
 	{
 		hostent* resolve;
 		sockaddr_in rem;
@@ -153,22 +146,11 @@ namespace cpIRC
 			return IRC_SOCKET_CONNECT_FAILED;
 		}
 
-#ifndef WIN32
-		dataout = fdopen(irc_socket, "w");
-		//datain=fdopen(irc_socket, "r");
-		if (!dataout /*|| !datain*/)
-		{
-			if(prnt)
-				prnt("Failed to open streams!\n");
-			closesocket(irc_socket);
-			return IRC_DATASTREAM_OPEN_FAILED;
-		}
-#endif
 		connected = true;
 		return IRC_SUCCESS;
 	}
 
-	int IRC::pass(char* password)
+	int IRC::pass(const char* password)
 	{
 		return irc_send("PASS %s\r\n", password);
 	}
@@ -179,21 +161,16 @@ namespace cpIRC
 		if (!connected)
 			return IRC_NOT_CONNECTED;
 
-#ifndef WIN32
-		if (fclose(dataout))
-			return IRC_DATASTREAM_CLOSE_FAILED;
-#endif
-
 		if (quit("Leaving") != IRC_SUCCESS)
 			return IRC_SEND_FAILED;
 
-#ifdef WIN32
 		if (shutdown(irc_socket, 2))
 		{
+#ifdef WIN32
 			prnt("[cpIRC]: Socket shutdown error. Last WSA error: %d\n", WSAGetLastError());
+#endif
 			return IRC_SOCKET_SHUTDOWN_FAILED;
 		}
-#endif
 
 		if (closesocket(irc_socket))
 			return IRC_SOCKET_CLOSE_FAILED;
@@ -207,7 +184,7 @@ namespace cpIRC
 		return irc_send("QUIT\r\n");
 	}
 
-	int IRC::quit(char* quit_message)
+	int IRC::quit(const char* quit_message)
 	{
 		return irc_send("QUIT %s\r\n", quit_message);
 	}
@@ -247,13 +224,13 @@ namespace cpIRC
 	//
 	void IRC::split_to_replies(char* data)
 	{
-		char* p;
-
-		while (p = strstr(data, "\r\n"))
+		char* p = strstr(data, "\r\n");
+		while (p)
 		{
 			*p = '\0';
 			parse_irc_reply(data);
 			data = p + 2;
+			p = strstr(data, "\r\n");
 		}
 	}
 
@@ -320,11 +297,11 @@ namespace cpIRC
 					}
 					unsigned int params_length = strlen(params) + 1;
 					cup->channel = new char[params_length];
-					irc_strcpy_s(cup->channel, params_length, params);
+					irc_strcpy(cup->channel, params_length, params);
 
 					unsigned int hostd_tmp_nick_length = strlen(hostd_tmp.nick) + 1;
 					cup->nick = new char[hostd_tmp_nick_length];
-					irc_strcpy_s(cup->nick, hostd_tmp_nick_length, hostd_tmp.nick);
+					irc_strcpy(cup->nick, hostd_tmp_nick_length, hostd_tmp.nick);
 				}
 			}
 			else if (!strcmp(cmd, "PART"))
@@ -612,11 +589,11 @@ namespace cpIRC
 							}
 							unsigned int p_length = strlen(p) + 1;
 							cup->nick = new char[p_length];
-							irc_strcpy_s(cup->nick, p_length, p);
+							irc_strcpy(cup->nick, p_length, p);
 
 							unsigned int chan_temp_length = strlen(p) + 1;
 							cup->channel = new char[chan_temp_length];
-							irc_strcpy_s(cup->channel, chan_temp_length, chan_temp);
+							irc_strcpy(cup->channel, chan_temp_length, chan_temp);
 
 							p = tmp;
 						}
@@ -644,11 +621,11 @@ namespace cpIRC
 						}
 						unsigned int p_length = strlen(p) + 1;
 						cup->nick = new char[p_length];
-						irc_strcpy_s(cup->nick, p_length, p);
+						irc_strcpy(cup->nick, p_length, p);
 
 						unsigned int chan_temp_length = strlen(chan_temp) + 1;
 						cup->channel = new char[chan_temp_length];
-						irc_strcpy_s(cup->channel, chan_temp_length, chan_temp);
+						irc_strcpy(cup->channel, chan_temp_length, chan_temp);
 					}
 				}
 			}
@@ -681,7 +658,7 @@ namespace cpIRC
 					delete[] cur_nick;
 					unsigned int cur_nick_length = strlen(params) + 1;
 					cur_nick = new char[cur_nick_length];
-					irc_strcpy_s(cur_nick, cur_nick_length, params);
+					irc_strcpy(cur_nick, cur_nick_length, params);
 				}
 			}*/
 			/* else if (!strcmp(cmd, ""))
@@ -689,7 +666,7 @@ namespace cpIRC
 				#ifdef __IRC_DEBUG__
 				#endif
 			} */
-			call_hook(cmd, params, &hostd_tmp);
+			callback(cmd, params, &hostd_tmp);
 		}
 		else
 		{
@@ -721,7 +698,7 @@ namespace cpIRC
 		}
 	}
 	//
-	void IRC::callback(char* irc_command, char* params, irc_reply_data* hostd)
+	void IRC::callback(const char* irc_command, const char* params, irc_reply_data* hostd)
 	{
 		if (!hooks)
 			return;
@@ -739,12 +716,12 @@ namespace cpIRC
 		}
 	}
 
-	int IRC::notice(char* nickname, char* text)
+	int IRC::notice(const char* nickname, const char* text)
 	{
 		return irc_send("NOTICE %s :%s\r\n", nickname, text);
 	}
 
-	int IRC::who(char* name, bool operators)
+	int IRC::who(const char* name, bool operators)
 	{
 		int result;
 		if (operators)
@@ -754,42 +731,42 @@ namespace cpIRC
 		return result;
 	}
 
-	int IRC::whois(char* nickmasks)
+	int IRC::whois(const char* nickmasks)
 	{
 		return irc_send("WHOIS %s\r\n", nickmasks);
 	}
 
-	int IRC::whois(char* server, char* nickmasks)
+	int IRC::whois(const char* server, const char* nickmasks)
 	{
 		return irc_send("WHOIS %s %s\r\n", server, nickmasks);
 	}
 
-	int IRC::whowas(char* nickname)
+	int IRC::whowas(const char* nickname)
 	{
 		return irc_send("WHOWAS %s\r\n", nickname);
 	}
 
-	int IRC::whowas(char* nickname, int count)
+	int IRC::whowas(const char* nickname, const int count)
 	{
 		return irc_send("WHOWAS %s %d\r\n", nickname, count);
 	}
 
-	int IRC::whowas(char* nickname, int count, char* server)
+	int IRC::whowas(const char* nickname, const int count, const char* server)
 	{
 		return irc_send("WHOWAS %s %d %s\r\n", nickname, count, server);
 	}
 
-	int IRC::kill(char* nickname, char* comment)
+	int IRC::kill(const char* nickname, const char* comment)
 	{
 		return irc_send("KILL %s %s", nickname, comment);
 	}
 
-	int IRC::pong(char* daemon)
+	int IRC::pong(const char* daemon)
 	{
 		return irc_send("PONG %s\r\n", daemon);
 	}
 
-	int IRC::pong(char* daemon1, char* daemon2)
+	int IRC::pong(const char* daemon1, const char* daemon2)
 	{
 		return irc_send("PONG %s %s\r\n", daemon1, daemon2);
 	}
@@ -799,7 +776,7 @@ namespace cpIRC
 		return irc_send("AWAY\r\n");
 	}
 
-	int IRC::away(char* message)
+	int IRC::away(const char* message)
 	{
 		return irc_send("AWAY :%s\r\n", message);
 	}
@@ -814,12 +791,12 @@ namespace cpIRC
 		return irc_send("RESTART\r\n");
 	}
 	//TODO ALL: sscanf :)
-	int IRC::summon(char* user)
+	int IRC::summon(const char* user)
 	{
 		return irc_send("SUMMON %s\r\n", user);
 	}
 
-	int IRC::summon(char* user, char* server)
+	int IRC::summon(const char* user, const char* server)
 	{
 		return irc_send("SUMMON %s %s\r\n", user, server);
 	}
@@ -829,72 +806,72 @@ namespace cpIRC
 		return irc_send("USERS\r\n");
 	}
 
-	int IRC::users(char* server)
+	int IRC::users(const char* server)
 	{
 		return irc_send("USERS %s\r\n", server);
 	}
 
-	int IRC::wallops(char* text)
+	int IRC::wallops(const char* text)
 	{
 		return irc_send("WALLOPS :%s\r\n", text);
 	}
 
-	int IRC::userhost(char* nicknames)
+	int IRC::userhost(const char* nicknames)
 	{
 		return irc_send("USERHOST %s\r\n", nicknames);
 	}
 
-	int IRC::ison(char* nicknames)
+	int IRC::ison(const char* nicknames)
 	{
 		return irc_send("ISON %s\r\n", nicknames);
 	}
 
-	int IRC::privmsg(char* receiver, char* text)
+	int IRC::privmsg(const char* receiver, const char* text)
 	{
 		return irc_send("PRIVMSG %s :%s\r\n", receiver, text);
 	}
 
-	int IRC::join(char* channels)
+	int IRC::join(const char* channels)
 	{
 		return irc_send("JOIN %s\r\n", channels);
 	}
 
-	int IRC::join(char* channels, char* keys)
+	int IRC::join(const char* channels, const char* keys)
 	{
 		return irc_send("JOIN %s %s\r\n", channels, keys);
 	}
 
-	int IRC::part(char* channels)
+	int IRC::part(const char* channels)
 	{
 		return irc_send("PART %s\r\n", channels);
 	}
 
-	int IRC::kick(char* channel, char* user)
+	int IRC::kick(const char* channel, const char* user)
 	{
 		return irc_send("KICK %s %s\r\n", channel, user);
 	}
 
-	int IRC::kick(char* channel, char* user, char* comment)
+	int IRC::kick(const char* channel, const char* user, const char* comment)
 	{
 		return irc_send("KICK %s %s :%s\r\n", channel, user, comment);
 	}
 
-	int IRC::raw(char* text)
+	int IRC::raw(const char* text)
 	{
 		return irc_send("%s\r\n", text);
 	}
 
-	int IRC::oper(char* user, char * password)
+	int IRC::oper(const char* user, const char* password)
 	{
 		return irc_send("OPER %s %s\r\n", user, password);
 	}
 
-	int IRC::topic(char* channel)
+	int IRC::topic(const char* channel)
 	{
 		return irc_send("TOPIC %s\r\n", channel);
 	}
 
-	int IRC::topic(char* channel, char* topic)
+	int IRC::topic(const char* channel, const char* topic)
 	{
 		return irc_send("TOPIC %s :%s\r\n", channel, topic);
 	}
@@ -904,12 +881,12 @@ namespace cpIRC
 		return irc_send("NAMES\r\n");
 	}
 
-	int IRC::names(char* channels)
+	int IRC::names(const char* channels)
 	{
 		return irc_send("NAMES %s\r\n", channels);
 	}
 
-	int IRC::mode(char* channel, char* modes, char* limit, char* user, char* banmask)
+	int IRC::mode(const char* channel, const char* modes, const char* limit, const char* user, const char* banmask)
 	{
 		int result;
 
@@ -947,32 +924,32 @@ namespace cpIRC
 		return irc_send("LIST\r\n");
 	}
 
-	int IRC::list(char* channels)
+	int IRC::list(const char* channels)
 	{
 		return irc_send("LIST %s\r\n", channels);
 	}
 
-	int IRC::list(char* channels, char* server)
+	int IRC::list(const char* channels, const char* server)
 	{
 		return irc_send("LIST %s %s\r\n", channels, server);
 	}
 
-	int IRC::invite(char* nickname, char* channel)
+	int IRC::invite(const char* nickname, const char* channel)
 	{
 		return irc_send("INVITE %s %s\r\n", nickname, channel);
 	}
 
-	int IRC::mode(char* nickname, char* modes)
+	int IRC::mode(const char* nickname, const char* modes)
 	{
 		return irc_send("MODE %s %s\r\n", nickname, modes);
 	}
 
-	int IRC::nick(char* nickname)
+	int IRC::nick(const char* nickname)
 	{
 		return irc_send("NICK %s\r\n", nickname);
 	}
 
-	int IRC::user(char * username, char * hostname, char * servername, char * realname)
+	int IRC::user(const char* username, const char* hostname, const char* servername, const char* realname)
 	{
 		return irc_send("USER %s %s %s :%s\r\n", username, hostname, servername, realname);
 	}

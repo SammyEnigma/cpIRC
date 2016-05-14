@@ -3,3 +3,6 @@
 main.cpp
 *.db
 *.opendb
+*.o
+*Makefile
+Qt/cpIRC
