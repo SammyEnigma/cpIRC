@@ -22,11 +22,11 @@
 	email:	iainsheppard@yahoo.co.uk
 	IRC:	#magpie @ irc.quakenet.org
 */
-//TODO: save current channel
+
 #include <stdio.h>
 #include <stdarg.h>
 
-#ifdef WIN32
+#ifdef _WIN64
 
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 #include <WinSock2.h>
@@ -56,7 +56,7 @@
 
 namespace cpIRC
 {
-	enum IrcUserFlags
+	enum IRCUserFlags
 	{
 		IRC_USER_REGULAR = 0,
 		IRC_USER_VOICE = 1,
@@ -64,7 +64,7 @@ namespace cpIRC
 		IRC_USER_OP = 4
 	};
 
-	enum IrcReturnCodes
+	enum IRCReturnCodes
 	{
 		IRC_SUCCESS = 0,
 		IRC_ALREADY_CONNECTED,
@@ -72,16 +72,13 @@ namespace cpIRC
 		IRC_SOCKET_CREATION_FAILED,
 		IRC_RESOLVE_FAILED,
 		IRC_SOCKET_CONNECT_FAILED,
-		IRC_DATASTREAM_OPEN_FAILED,
-		IRC_DATASTREAM_WRITE_FAILED,
-		IRC_DATASTREAM_CLOSE_FAILED,
 		IRC_SEND_FAILED,
 		IRC_RECV_FAILED,
 		IRC_SOCKET_SHUTDOWN_FAILED,
 		IRC_SOCKET_CLOSE_FAILED
 	};
 
-	struct irc_reply_data
+	struct IRCReply
 	{
 		char* nick;
 		char* ident;
@@ -160,40 +157,40 @@ namespace cpIRC
 
 		int raw(const char* text);
 		int connect(const char* server, const short int port);
-		void set_callback(const char* cmd_name, int(*function_ptr)(const char*, irc_reply_data*, IRC*));
+		void set_callback(const char* cmd_name, int(*function_ptr)(const char*, IRCReply*, IRC*));
 		int message_loop();
 		int disconnect();
 
 	private:
-		struct irc_command_hook;
-		struct channel_user;
+		struct CallbackHandler;
+		struct UserHandler;
 
-		void callback(const char* irc_command, const char* params, irc_reply_data* hostd);
+		void callback(const char* command, const char* params, IRCReply* hostd);
 		void parse_irc_reply(char* data);
 		void split_to_replies(char* data);
-		void clear_irc_command_hook();
+		void clear_callbacks();
 		void irc_strcpy(char* dest, const unsigned int destLen, const char* src);
 		int irc_send(const char* format, ...);
 
-		int irc_socket;
+		int ircSocket;
 		bool connected;
-		channel_user* chan_users;
-		irc_command_hook* hooks;
+		UserHandler* userList;
+		CallbackHandler* callbackList;
 		void(*prnt)(const char* format, ...);
 	};
 
-	struct IRC::irc_command_hook
+	struct IRC::CallbackHandler
 	{
-		char* irc_command;
-		int(*function)(const char*, irc_reply_data*, IRC*);
-		irc_command_hook* next;
+		char* command;
+		int(*callback)(const char*, IRCReply*, IRC*);
+		CallbackHandler* next;
 	};
 
-	struct IRC::channel_user
+	struct IRC::UserHandler
 	{
 		char* nick;
 		char* channel;
 		char flags;
-		channel_user* next;
+		UserHandler* next;
 	};
 }

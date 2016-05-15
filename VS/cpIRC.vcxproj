@@ -99,11 +99,13 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="IRC.cpp" />
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\IRC.cpp" />
+    <ClCompile Include="..\main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="IRC.hpp" />
+    <ClInclude Include="..\IRC.hpp" />
+    <ClInclude Include="..\IRC_errors.hpp" />
+    <ClInclude Include="..\IRC_responses.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include=".gitignore" />
