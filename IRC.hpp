@@ -72,10 +72,14 @@ namespace cpIRC
 
 	struct IRCReply
 	{
+		// Prefix.
 		char* nick;
-		char* ident;
+		char* user;
 		char* host;
-		char* target;
+		// Command.
+		char* command;
+		// Params.
+		char* params;
 	};
 
 	class IRC
@@ -87,7 +91,7 @@ namespace cpIRC
 		// This class only.
 
 		int connect(const char* server, const short int port);
-		void set_callback(const char* cmd, int(*function_ptr)(const char*, IRCReply*, IRC*));
+		void set_callback(const char* cmd, int(*function_ptr)(IRC*, IRCReply*));
 		int message_loop();
 		int disconnect();
 		int raw(const char* text);
@@ -157,8 +161,8 @@ namespace cpIRC
 		struct CallbackHandler;
 		struct UserHandler;
 
-		void callback(const char* command, const char* params, IRCReply* hostd);
-		void parse_irc_reply(char* data);
+		void callback(IRCReply* reply);
+		void parse_irc_reply(char* message);
 		void split_to_replies(char* data);
 		void clear_callbacks();
 		void irc_strcpy(char* dest, const unsigned int destLen, const char* src);
@@ -173,7 +177,7 @@ namespace cpIRC
 	struct IRC::CallbackHandler
 	{
 		char* command;
-		int(*callback)(const char*, IRCReply*, IRC*);
+		int(*callback)(IRC*, IRCReply*);
 		CallbackHandler* next;
 	};
 }

@@ -35,5 +35,8 @@
     <ClInclude Include="..\IRC_responses.hpp">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\IRCReply.hpp">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -79,7 +79,7 @@ namespace cpIRC
 		return IRC_SUCCESS;
 	}
 
-	void IRC::set_callback(const char* cmd, int(*function_ptr)(const char*, IRCReply*, IRC*))
+	void IRC::set_callback(const char* cmd, int(*function_ptr)(IRC*, IRCReply*))
 	{
 		if (!callbackList)
 		{
@@ -421,7 +421,7 @@ namespace cpIRC
 	////////////////////
 	////////////////////
 
-	void IRC::callback(const char* command, const char* params, IRCReply* hostd)
+	void IRC::callback(IRCReply* reply)
 	{
 		if (!callbackList)
 			return;
@@ -430,9 +430,9 @@ namespace cpIRC
 
 		while (p)
 		{
-			if (!strcmp(p->command, command))
+			if (!strcmp(p->command, reply->command))
 			{
-				(*(p->callback))(params, hostd, this);
+				(*(p->callback))(this, reply);
 				break;
 			}
 			p = p->next;
@@ -441,43 +441,56 @@ namespace cpIRC
 
 	void IRC::parse_irc_reply(char* message)
 	{
+		IRCReply reply = { NULL };
 		if (prnt)
 			prnt("C<-S| %s\n", message);
 
 		char* pointer = message;
-		char* prefix  = NULL;
-		char* command = NULL;
-		char* params  = NULL;
 		if (message[0] == ':') // Prefix exists.
 		{
-			prefix = ++pointer;
-			pointer = strchr(prefix, ' ');
+			reply.nick = ++pointer;
+			pointer = strchr(pointer, '!');
+			if (!pointer)
+			{
+				pointer = reply.nick;
+				goto done;
+			}
+			*pointer = '\0';
+			reply.user = ++pointer;
+			pointer = strchr(pointer, '@');
+			if (!pointer)
+			{
+				pointer = reply.nick;
+				goto done;
+			}
+			*pointer = '\0';
+			reply.host = ++pointer;
+		done:
+			pointer = strchr(pointer, ' ');
 			if (!pointer) // No space before command? Bad packet.
 				return;
 			*pointer = '\0';
 			++pointer;
 		}
-		command = pointer;
+		reply.command = pointer;
 		pointer = strchr(pointer, ' ');
 		if (pointer) // Parameter list exist.
 		{
 			*pointer = '\0';
-			params = ++pointer;
-			
+			reply.params = ++pointer;
 		}
 
 #ifdef __IRC_DEBUG__
 		if (prnt)
-			prnt("\tprefix\t= %s\n\tcommand\t= %s\n\tparams\t= %s\n", prefix, command, params);
+			prnt("\tnick\t= %s\n\tuser\t= %s\n\thost\t= %s\n\tcommand\t= %s\n\tparams\t= %s\n", reply.nick, reply.user, reply.host, reply.command, reply.params);
 #endif
-		IRCReply reply = { NULL }; //TODO: reply here
-
-		if (!strcmp(command, "PING"))
+		
+		if (!strcmp(reply.command, "PING"))
 		{
-			if (!params)
+			if (!reply.params)
 				return;
 
-			irc_send("PONG %s\r\n", &params[1]);
+			irc_send("PONG %s\r\n", &reply.params[1]);
 
 #ifdef __IRC_DEBUG__
 			if (prnt)
@@ -485,79 +498,7 @@ namespace cpIRC
 #endif
 		}
 		else
-			callback(command, params, &reply);
-
-		/*
-		char* hostd;
-		char* cmd;
-		char* params;
-		IRCReply hostd_tmp;
-		char* p;
-		char* chan_temp;
-
-		hostd_tmp.target = 0;
-
-		if (prnt)
-			prnt("%s\n", message);
-
-		if (message[0] == ':')
-		{
-			hostd = &message[1];
-			cmd = strchr(hostd, ' ');
-			if (!cmd)
-				return;
-			*cmd = '\0';
-			cmd++;
-			params = strchr(cmd, ' ');
-			if (params)
-			{
-				*params = '\0';
-				params++;
-			}
-			hostd_tmp.nick = hostd;
-			hostd_tmp.ident = strchr(hostd, '!');
-			if (hostd_tmp.ident)
-			{
-				*hostd_tmp.ident = '\0';
-				hostd_tmp.ident++;
-				hostd_tmp.host = strchr(hostd_tmp.ident, '@');
-				if (hostd_tmp.host)
-				{
-					*hostd_tmp.host = '\0';
-					hostd_tmp.host++;
-				}
-			}
-
-			callback(cmd, params, &hostd_tmp);
-		}
-		else
-		{
-			cmd = message;
-			message = strchr(cmd, ' ');
-			if (!message)
-				return;
-			*message = '\0';
-			params = message + 1;
-
-			if (!strcmp(cmd, "PING"))
-			{
-				if (!params)
-					return;
-				irc_send("PONG %s\r\n", &params[1]);
-#ifdef __IRC_DEBUG__
-				if (prnt)
-					prnt("Ping received, pong sent.\n");
-#endif
-			}
-			else
-			{
-				hostd_tmp.host = 0;
-				hostd_tmp.ident = 0;
-				hostd_tmp.nick = 0;
-				hostd_tmp.target = 0;
-				callback(cmd, params, &hostd_tmp);
-			}
-		}*/
+			callback(&reply);
 	}
 
 	void IRC::split_to_replies(char* data)

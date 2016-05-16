@@ -104,6 +104,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\IRC.hpp" />
+    <ClInclude Include="..\IRCReply.hpp" />
     <ClInclude Include="..\IRC_errors.hpp" />
     <ClInclude Include="..\IRC_responses.hpp" />
   </ItemGroup>
