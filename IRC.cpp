@@ -31,7 +31,6 @@ namespace cpIRC
 	{
 		callbackList = 0;
 		connected = false;
-		userList = 0;
 		prnt = printFunction;
 	}
 
@@ -41,6 +40,131 @@ namespace cpIRC
 			disconnect();
 
 		clear_callbacks();
+	}
+
+	int IRC::connect(const char* server, const short int port)
+	{
+		hostent* resolve;
+		sockaddr_in rem;
+
+		if (connected)
+			return IRC_ALREADY_CONNECTED;
+
+		ircSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+		if (ircSocket == INVALID_SOCKET)
+			return IRC_SOCKET_CREATION_FAILED;
+
+		resolve = gethostbyname(server);
+		if (!resolve)
+		{
+			closesocket(ircSocket);
+			return IRC_RESOLVE_FAILED;
+		}
+
+		memcpy(&rem.sin_addr, resolve->h_addr, 4);
+		rem.sin_family = AF_INET;
+		rem.sin_port = htons(port);
+
+		if (::connect(ircSocket, reinterpret_cast<const sockaddr*>(&rem), sizeof(rem)) == SOCKET_ERROR)
+		{
+#ifdef WIN32
+			if (prnt)
+				prnt("[cpIRC]: Failed to connect: %d\n", WSAGetLastError());
+#endif
+			closesocket(ircSocket);
+			return IRC_SOCKET_CONNECT_FAILED;
+		}
+
+		connected = true;
+		return IRC_SUCCESS;
+	}
+
+	void IRC::set_callback(const char* cmd, int(*function_ptr)(const char*, IRCReply*, IRC*))
+	{
+		if (!callbackList)
+		{
+			callbackList = new CallbackHandler;
+			callbackList->next = NULL;
+			callbackList->callback = function_ptr;
+
+			unsigned int cmd_length = strlen(cmd) + 1;
+			callbackList->command = new char[cmd_length]();
+			irc_strcpy(callbackList->command, cmd_length + 1, cmd);
+
+			return;
+		}
+
+		CallbackHandler* last = callbackList;
+		while (last->next)
+			last = last->next;
+
+		last->next = new CallbackHandler;
+		last->next->next = NULL;
+		last->next->callback = function_ptr;
+
+		unsigned int cmd_length = strlen(cmd) + 1;
+		last->next->command = new char[cmd_length]();
+		irc_strcpy(last->next->command, cmd_length + 1, cmd);
+	}
+
+	int IRC::message_loop()
+	{
+		if (!connected)
+			return IRC_NOT_CONNECTED;
+
+		char* buffer = new char[1024]();
+
+		while (1)
+		{
+			int ret_len = recv(ircSocket, buffer, 1023, 0);
+
+			if (!ret_len) // Socked has been closed.
+				break;
+
+			if (ret_len == SOCKET_ERROR)
+			{
+#ifdef WIN32
+				if (prnt)
+					prnt("[cpIRC]: Recv error: %d", WSAGetLastError());
+#endif
+				delete[] buffer;
+				return IRC_RECV_FAILED;
+			}
+
+			buffer[ret_len] = '\0';
+			split_to_replies(buffer);
+		}
+
+		delete[] buffer;
+		return IRC_SUCCESS;
+	}
+
+	int IRC::disconnect()
+	{
+		if (!connected)
+			return IRC_NOT_CONNECTED;
+
+		if (quit("Leaving") != IRC_SUCCESS)
+			return IRC_SEND_FAILED;
+
+		if (shutdown(ircSocket, 2))
+		{
+#ifdef WIN32
+			prnt("[cpIRC]: Socket shutdown error. Last WSA error: %d\n", WSAGetLastError());
+#endif
+			return IRC_SOCKET_SHUTDOWN_FAILED;
+		}
+
+		if (closesocket(ircSocket))
+			return IRC_SOCKET_CLOSE_FAILED;
+
+		connected = false;
+		return IRC_SUCCESS;
+	}
+
+	int IRC::raw(const char* text)
+	{
+		return irc_send("%s\r\n", text);
 	}
 
 	int IRC::pass(const char* password)
@@ -291,131 +415,6 @@ namespace cpIRC
 		return irc_send("ISON %s\r\n", nicknames);
 	}
 
-	int IRC::raw(const char* text)
-	{
-		return irc_send("%s\r\n", text);
-	}
-
-	int IRC::connect(const char* server, const short int port)
-	{
-		hostent* resolve;
-		sockaddr_in rem;
-
-		if (connected)
-			return IRC_ALREADY_CONNECTED;
-
-		ircSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-		if (ircSocket == INVALID_SOCKET)
-			return IRC_SOCKET_CREATION_FAILED;
-
-		resolve = gethostbyname(server);
-		if (!resolve)
-		{
-			closesocket(ircSocket);
-			return IRC_RESOLVE_FAILED;
-		}
-
-		memcpy(&rem.sin_addr, resolve->h_addr, 4);
-		rem.sin_family = AF_INET;
-		rem.sin_port = htons(port);
-
-		if (::connect(ircSocket, reinterpret_cast<const sockaddr*>(&rem), sizeof(rem)) == SOCKET_ERROR)
-		{
-#ifdef WIN32
-			if (prnt)
-				prnt("[cpIRC]: Failed to connect: %d\n", WSAGetLastError());
-#endif
-			closesocket(ircSocket);
-			return IRC_SOCKET_CONNECT_FAILED;
-		}
-
-		connected = true;
-		return IRC_SUCCESS;
-	}
-
-	void IRC::set_callback(const char* cmd_name, int(*function_ptr)(const char*, IRCReply*, IRC*))
-	{
-		if (!callbackList)
-		{
-			callbackList = new CallbackHandler;
-			callbackList->next = NULL;
-			callbackList->callback = function_ptr;
-
-			unsigned int cmd_name_length = strlen(cmd_name) + 1;
-			callbackList->command = new char[cmd_name_length]();
-			irc_strcpy(callbackList->command, cmd_name_length+1, cmd_name);
-
-			return;
-		}
-
-		CallbackHandler* last = callbackList;
-		while (last->next)
-			last = last->next;
-
-		last->next = new CallbackHandler;
-		last->next->next = NULL;
-		last->next->callback = function_ptr;
-
-		unsigned int cmd_name_length = strlen(cmd_name) + 1;
-		last->next->command = new char[cmd_name_length]();
-		irc_strcpy(last->next->command, cmd_name_length+1, cmd_name);
-	}
-
-	int IRC::message_loop()
-	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
-		char* buffer = new char[1024]();
-
-		while (1)
-		{
-			int ret_len = recv(ircSocket, buffer, 1023, 0);
-
-			if (!ret_len) // Socked has been closed.
-				break;
-
-			if (ret_len == SOCKET_ERROR)
-			{
-#ifdef WIN32
-				if (prnt)
-					prnt("[cpIRC]: Recv error: %d", WSAGetLastError());
-#endif
-				delete[] buffer;
-				return IRC_RECV_FAILED;
-			}
-
-			buffer[ret_len] = '\0';
-			split_to_replies(buffer);
-		}
-
-		delete[] buffer;
-		return IRC_SUCCESS;
-	}
-
-	int IRC::disconnect()
-	{
-		if (!connected)
-			return IRC_NOT_CONNECTED;
-
-		if (quit("Leaving") != IRC_SUCCESS)
-			return IRC_SEND_FAILED;
-
-		if (shutdown(ircSocket, 2))
-		{
-#ifdef WIN32
-			prnt("[cpIRC]: Socket shutdown error. Last WSA error: %d\n", WSAGetLastError());
-#endif
-			return IRC_SOCKET_SHUTDOWN_FAILED;
-		}
-
-		if (closesocket(ircSocket))
-			return IRC_SOCKET_CLOSE_FAILED;
-
-		connected = false;
-		return IRC_SUCCESS;
-	}
-
 	////////////////////
 	////////////////////
 	///////private//////
@@ -442,12 +441,57 @@ namespace cpIRC
 
 	void IRC::parse_irc_reply(char* message)
 	{
+		if (prnt)
+			prnt("C<-S| %s\n", message);
 
+		char* pointer = message;
+		char* prefix  = NULL;
+		char* command = NULL;
+		char* params  = NULL;
+		if (message[0] == ':') // Prefix exists.
+		{
+			prefix = ++pointer;
+			pointer = strchr(prefix, ' ');
+			if (!pointer) // No space before command? Bad packet.
+				return;
+			*pointer = '\0';
+			++pointer;
+		}
+		command = pointer;
+		pointer = strchr(pointer, ' ');
+		if (pointer) // Parameter list exist.
+		{
+			*pointer = '\0';
+			params = ++pointer;
+			
+		}
+
+#ifdef __IRC_DEBUG__
+		if (prnt)
+			prnt("\tprefix\t= %s\n\tcommand\t= %s\n\tparams\t= %s\n", prefix, command, params);
+#endif
+		IRCReply reply = { NULL }; //TODO: reply here
+
+		if (!strcmp(command, "PING"))
+		{
+			if (!params)
+				return;
+
+			irc_send("PONG %s\r\n", &params[1]);
+
+#ifdef __IRC_DEBUG__
+			if (prnt)
+				prnt("Ping-Pong\n");
+#endif
+		}
+		else
+			callback(command, params, &reply);
+
+		/*
 		char* hostd;
 		char* cmd;
 		char* params;
 		IRCReply hostd_tmp;
-		UserHandler* user;
 		char* p;
 		char* chan_temp;
 
@@ -484,394 +528,6 @@ namespace cpIRC
 				}
 			}
 
-			if (!strcmp(cmd, "JOIN"))
-			{
-				user = userList;
-				if (user)
-				{
-					while (user->nick)
-					{
-						if (!user->next)
-						{
-							user->next = new UserHandler;
-							user->next->channel = 0;
-							user->next->flags = 0;
-							user->next->next = 0;
-							user->next->nick = 0;
-						}
-						user = user->next;
-					}
-					unsigned int params_length = strlen(params) + 1;
-					user->channel = new char[params_length]();
-					irc_strcpy(user->channel, params_length+1, params);
-
-					unsigned int hostd_tmp_nick_length = strlen(hostd_tmp.nick) + 1;
-					user->nick = new char[hostd_tmp_nick_length]();
-					irc_strcpy(user->nick, hostd_tmp_nick_length+1, hostd_tmp.nick);
-				}
-			}
-			else if (!strcmp(cmd, "PART"))
-			{
-				UserHandler* d;
-				UserHandler* prev;
-
-				d = 0;
-				prev = 0;
-				user = userList;
-				while (user)
-				{
-					if (!strcmp(user->channel, params) && !strcmp(user->nick, hostd_tmp.nick))
-					{
-						d = user;
-						break;
-					}
-					else
-					{
-						prev = user;
-					}
-					user = user->next;
-				}
-				if (d)
-				{
-					if (d == userList)
-					{
-						userList = d->next;
-						if (d->channel)
-							delete[] d->channel;
-						if (d->nick)
-							delete[] d->nick;
-						delete d;
-					}
-					else
-					{
-						if (prev)
-						{
-							prev->next = d->next;
-						}
-						userList = d->next;
-						if (d->channel)
-							delete[] d->channel;
-						if (d->nick)
-							delete[] d->nick;
-						delete d;
-					}
-				}
-			}
-			else if (!strcmp(cmd, "QUIT"))
-			{
-				UserHandler* d;
-				UserHandler* prev;
-
-				d = 0;
-				prev = 0;
-				user = userList;
-				while (user)
-				{
-					if (!strcmp(user->nick, hostd_tmp.nick))
-					{
-						d = user;
-						if (d == userList)
-						{
-							userList = d->next;
-							if (d->channel)
-								delete[] d->channel;
-							if (d->nick)
-								delete[] d->nick;
-							delete d;
-						}
-						else
-						{
-							if (prev)
-							{
-								prev->next = d->next;
-							}
-							if (d->channel)
-								delete[] d->channel;
-							if (d->nick)
-								delete[] d->nick;
-							delete d;
-						}
-						break;
-					}
-					else
-					{
-						prev = user;
-					}
-					user = user->next;
-				}
-			}
-			else if (!strcmp(cmd, "MODE"))
-			{
-				char* chan;
-				char* changevars;
-				UserHandler* user;
-				UserHandler* d;
-				char* tmp;
-				int i;
-				bool plus;
-
-				chan = params;
-				params = strchr(chan, ' ');
-				*params = '\0';
-				params++;
-				changevars = params;
-				params = strchr(changevars, ' ');
-				if (!params)
-				{
-					return;
-				}
-				if (chan[0] != '#')
-				{
-					return;
-				}
-				*params = '\0';
-				params++;
-
-				plus = false;
-				for (i = 0; i < (signed)strlen(changevars); i++)
-				{
-					switch (changevars[i])
-					{
-					case '+':
-						plus = true;
-						break;
-					case '-':
-						plus = false;
-						break;
-					case 'o':
-						tmp = strchr(params, ' ');
-						if (tmp)
-						{
-							*tmp = '\0';
-							tmp++;
-						}
-						tmp = params;
-						if (plus)
-						{
-							// user has been opped (chan, params)
-							user = userList;
-							d = 0;
-							while (user)
-							{
-								if (user->next && user->channel)
-								{
-									if (!strcmp(user->channel, chan) && !strcmp(user->nick, tmp))
-									{
-										d = user;
-										break;
-									}
-								}
-								user = user->next;
-							}
-							if (d)
-							{
-								d->flags = d->flags | IRC_USER_OP;
-							}
-						}
-						else
-						{
-							// user has been deopped (chan, params)
-							user = userList;
-							d = 0;
-							while (user)
-							{
-								if (!strcmp(user->channel, chan) && !strcmp(user->nick, tmp))
-								{
-									d = user;
-									break;
-								}
-								user = user->next;
-							}
-							if (d)
-							{
-								d->flags = d->flags^IRC_USER_OP;
-							}
-						}
-						params = tmp;
-						break;
-					case 'v':
-						tmp = strchr(params, ' ');
-						if (tmp)
-						{
-							*tmp = '\0';
-							tmp++;
-						}
-						if (plus)
-						{
-							// user has been voiced
-							user = userList;
-							d = 0;
-							while (user)
-							{
-								if (!strcmp(user->channel, params) && !strcmp(user->nick, hostd_tmp.nick))
-								{
-									d = user;
-									break;
-								}
-								user = user->next;
-							}
-							if (d)
-							{
-								d->flags = d->flags | IRC_USER_VOICE;
-							}
-						}
-						else
-						{
-							// user has been devoiced
-							user = userList;
-							d = 0;
-							while (user)
-							{
-								if (!strcmp(user->channel, params) && !strcmp(user->nick, hostd_tmp.nick))
-								{
-									d = user;
-									break;
-								}
-								user = user->next;
-							}
-							if (d)
-							{
-								d->flags = d->flags^IRC_USER_VOICE;
-							}
-						}
-						params = tmp;
-						break;
-					default:
-						return;
-						break;
-					}
-					// ------------ END OF MODE ---------------
-				}
-			}
-			else if (!strcmp(cmd, RPL_NAMREPLY))
-			{
-				// receiving channel names list
-				if (!userList)
-				{
-					userList = new UserHandler;
-					userList->next = 0;
-					userList->nick = 0;
-					userList->flags = 0;
-					userList->channel = 0;
-				}
-				user = userList;
-				chan_temp = strchr(params, '#');
-				if (chan_temp)
-				{
-					//chan_temp+=3;
-					p = strstr(chan_temp, " :");
-					if (p)
-					{
-						*p = '\0';
-						p += 2;
-						while (strchr(p, ' '))
-						{
-							char* tmp;
-
-							tmp = strchr(p, ' ');
-							*tmp = '\0';
-							tmp++;
-							while (user->nick)
-							{
-								if (!user->next)
-								{
-									user->next = new UserHandler;
-									user->next->channel = 0;
-									user->next->flags = 0;
-									user->next->next = 0;
-									user->next->nick = 0;
-								}
-								user = user->next;
-							}
-							if (p[0] == '@')
-							{
-								user->flags = user->flags | IRC_USER_OP;
-								p++;
-							}
-							else if (p[0] == '+')
-							{
-								user->flags = user->flags | IRC_USER_VOICE;
-								p++;
-							}
-							unsigned int p_length = strlen(p) + 1;
-							user->nick = new char[p_length]();
-							irc_strcpy(user->nick, p_length+1, p);
-
-							unsigned int chan_temp_length = strlen(p) + 1;
-							user->channel = new char[chan_temp_length]();
-							irc_strcpy(user->channel, chan_temp_length+1, chan_temp);
-
-							p = tmp;
-						}
-						while (user->nick)
-						{
-							if (!user->next)
-							{
-								user->next = new UserHandler;
-								user->next->channel = 0;
-								user->next->flags = 0;
-								user->next->next = 0;
-								user->next->nick = 0;
-							}
-							user = user->next;
-						}
-						if (p[0] == '@')
-						{
-							user->flags = user->flags | IRC_USER_OP;
-							p++;
-						}
-						else if (p[0] == '+')
-						{
-							user->flags = user->flags | IRC_USER_VOICE;
-							p++;
-						}
-						unsigned int p_length = strlen(p) + 1;
-						user->nick = new char[p_length]();
-						irc_strcpy(user->nick, p_length+1, p);
-
-						unsigned int chan_temp_length = strlen(chan_temp) + 1;
-						user->channel = new char[chan_temp_length]();
-						irc_strcpy(user->channel, chan_temp_length+1, chan_temp);
-					}
-				}
-			}
-			else if (!strcmp(cmd, "NOTICE"))
-			{
-				hostd_tmp.target = params;
-				params = strchr(hostd_tmp.target, ' ');
-				if (params)
-					*params = '\0';
-				params++;
-#ifdef __IRC_DEBUG__
-				prnt("%s >-%s- %s\n", hostd_tmp.nick, hostd_tmp.target, &params[1]);
-#endif
-			}
-			else if (!strcmp(cmd, "PRIVMSG"))
-			{
-				hostd_tmp.target = params;
-				params = strchr(hostd_tmp.target, ' ');
-				if (!params)
-					return;
-				*(params++) = '\0';
-#ifdef __IRC_DEBUG__
-				prnt("%s: <%s> %s\n", hostd_tmp.target, hostd_tmp.nick, &params[1]);
-#endif
-			}
-			/*else if (!strcmp(cmd, "NICK"))
-			{
-			if (!strcmp(hostd_tmp.nick, cur_nick))
-			{
-			delete[] cur_nick;
-			unsigned int cur_nick_length = strlen(params) + 1;
-			cur_nick = new char[cur_nick_length];
-			irc_strcpy(cur_nick, cur_nick_length, params);
-			}
-			}*/
-			/*else if (!strcmp(cmd, ""))
-			{
-			#ifdef __IRC_DEBUG__
-			#endif
-			}*/
 			callback(cmd, params, &hostd_tmp);
 		}
 		else
@@ -901,7 +557,7 @@ namespace cpIRC
 				hostd_tmp.target = 0;
 				callback(cmd, params, &hostd_tmp);
 			}
-		}
+		}*/
 	}
 
 	void IRC::split_to_replies(char* data)
@@ -955,6 +611,21 @@ namespace cpIRC
 		va_end(va);
 
 		result = send(ircSocket, buffer, min(strlen(buffer), 512), 0) ? IRC_SUCCESS : IRC_SEND_FAILED;
+
+		if (result == IRC_SUCCESS)
+		{
+			if (!strncmp(buffer, "PASS", 4))
+			{
+				char* pointer = buffer + 5;
+				while (*pointer != '\r')
+				{
+					*pointer = '*';
+					++pointer;
+				}
+			}
+			if (prnt)
+				prnt("C->S| %s", buffer);
+		}
 		return result;
 	}
 }

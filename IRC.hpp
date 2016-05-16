@@ -56,14 +56,6 @@
 
 namespace cpIRC
 {
-	enum IRCUserFlags
-	{
-		IRC_USER_REGULAR = 0,
-		IRC_USER_VOICE = 1,
-		IRC_USER_HALFOP = 2,
-		IRC_USER_OP = 4
-	};
-
 	enum IRCReturnCodes
 	{
 		IRC_SUCCESS = 0,
@@ -91,6 +83,14 @@ namespace cpIRC
 	public:
 		IRC(void(*printFunction)(const char* fmt, ...));
 		~IRC();
+
+		// This class only.
+
+		int connect(const char* server, const short int port);
+		void set_callback(const char* cmd, int(*function_ptr)(const char*, IRCReply*, IRC*));
+		int message_loop();
+		int disconnect();
+		int raw(const char* text);
 
 		// Connection registration.
 
@@ -153,14 +153,6 @@ namespace cpIRC
 		int userhost(const char* nicknames);
 		int ison(const char* nicknames);
 
-		// This class only.
-
-		int raw(const char* text);
-		int connect(const char* server, const short int port);
-		void set_callback(const char* cmd_name, int(*function_ptr)(const char*, IRCReply*, IRC*));
-		int message_loop();
-		int disconnect();
-
 	private:
 		struct CallbackHandler;
 		struct UserHandler;
@@ -174,7 +166,6 @@ namespace cpIRC
 
 		int ircSocket;
 		bool connected;
-		UserHandler* userList;
 		CallbackHandler* callbackList;
 		void(*prnt)(const char* format, ...);
 	};
@@ -184,13 +175,5 @@ namespace cpIRC
 		char* command;
 		int(*callback)(const char*, IRCReply*, IRC*);
 		CallbackHandler* next;
-	};
-
-	struct IRC::UserHandler
-	{
-		char* nick;
-		char* channel;
-		char flags;
-		UserHandler* next;
 	};
 }
